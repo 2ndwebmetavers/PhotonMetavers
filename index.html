@@ -1,127 +1,177 @@
 <!DOCTYPE html>
-<html lang="en-us">
+<html lang="ja">
   <head>
     <meta charset="utf-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <title>Unity Web Player | PhotonwebMetavers</title>
     <link rel="shortcut icon" href="TemplateData/favicon.ico">
     <link rel="stylesheet" href="TemplateData/style.css">
+
+    <!-- パスワード入力用の簡易スタイル -->
+    <style>
+      #password-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        background: rgba(0, 0, 0, 0.85);
+        z-index: 9999;
+      }
+      #password-overlay h2 {
+        color: #fff;
+        font-size: 1.4rem;
+        margin-bottom: 1rem;
+      }
+      #password-overlay input {
+        padding: 0.65rem 1rem;
+        font-size: 1.1rem;
+      }
+      #password-overlay button {
+        margin-top: 1rem;
+        padding: 0.5rem 1.2rem;
+        font-size: 1rem;
+        cursor: pointer;
+      }
+      #password-error {
+        margin-top: 0.8rem;
+        color: #ff6b6b;
+        display: none;
+      }
+      .hidden {
+        display: none;
+      }
+    </style>
   </head>
   <body>
-    <div id="unity-container" class="unity-desktop">
-      <canvas id="unity-canvas" width=960 height=600 tabindex="-1"></canvas>
+    <!-- パスワード入力オーバーレイ -->
+    <div id="password-overlay">
+      <h2>パスワードを入力してください</h2>
+      <input type="password" id="password-input" autocomplete="off" />
+      <button id="password-submit">Enter</button>
+      <p id="password-error">パスワードが違います</p>
+    </div>
+
+    <!-- 本来の Unity WebGL コンテンツ。初期状態では非表示 -->
+    <div id="unity-container" class="unity-desktop hidden">
+      <canvas id="unity-canvas" width="960" height="600" tabindex="-1"></canvas>
       <div id="unity-loading-bar">
         <div id="unity-logo"></div>
         <div id="unity-progress-bar-empty">
           <div id="unity-progress-bar-full"></div>
         </div>
       </div>
-      <div id="unity-warning"> </div>
+      <div id="unity-warning"></div>
       <div id="unity-footer">
         <div id="unity-logo-title-footer"></div>
         <div id="unity-fullscreen-button"></div>
         <div id="unity-build-title">PhotonwebMetavers</div>
       </div>
     </div>
+
     <script>
-      var canvas = document.querySelector("#unity-canvas");
+      // パスワード(大文字小文字区別あり)。必要に応じて書き換えてください。
+      const CORRECT_PASSWORD = "WEBMETAVERS";
 
-      // Shows a temporary message banner/ribbon for a few seconds, or
-      // a permanent error message on top of the canvas if type=='error'.
-      // If type=='warning', a yellow highlight color is used.
-      // Modify or remove this function to customize the visually presented
-      // way that non-critical warnings and error messages are presented to the
-      // user.
-      function unityShowBanner(msg, type) {
-        var warningBanner = document.querySelector("#unity-warning");
-        function updateBannerVisibility() {
-          warningBanner.style.display = warningBanner.children.length ? 'block' : 'none';
+      // ---------------- Unity Loader を関数化 ----------------
+      function loadUnity() {
+        const canvas = document.querySelector("#unity-canvas");
+
+        // Unity の警告バナー関数 (オリジナルと同じ)
+        function unityShowBanner(msg, type) {
+          const warningBanner = document.querySelector("#unity-warning");
+          function updateBannerVisibility() {
+            warningBanner.style.display = warningBanner.children.length ? "block" : "none";
+          }
+          const div = document.createElement("div");
+          div.innerHTML = msg;
+          warningBanner.appendChild(div);
+          if (type === "error") div.style = "background: red; padding: 10px;";
+          else {
+            if (type === "warning") div.style = "background: yellow; padding: 10px;";
+            setTimeout(function () {
+              warningBanner.removeChild(div);
+              updateBannerVisibility();
+            }, 5000);
+          }
+          updateBannerVisibility();
         }
-        var div = document.createElement('div');
-        div.innerHTML = msg;
-        warningBanner.appendChild(div);
-        if (type == 'error') div.style = 'background: red; padding: 10px;';
-        else {
-          if (type == 'warning') div.style = 'background: yellow; padding: 10px;';
-          setTimeout(function() {
-            warningBanner.removeChild(div);
-            updateBannerVisibility();
-          }, 5000);
+
+        const buildUrl = "Build";
+        const loaderUrl = `${buildUrl}/WebMetavers.loader.js`;
+        const config = {
+          arguments: [],
+          dataUrl: `${buildUrl}/WebMetavers.data.br`,
+          frameworkUrl: `${buildUrl}/WebMetavers.framework.js.br`,
+          codeUrl: `${buildUrl}/WebMetavers.wasm.br`,
+          streamingAssetsUrl: "StreamingAssets",
+          companyName: "DefaultCompany",
+          productName: "PhotonwebMetavers",
+          productVersion: "0.1.0",
+          showBanner: unityShowBanner,
+        };
+
+        // スマホ・PC 判定 (オリジナルとほぼ同じ)
+        if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+          const meta = document.createElement("meta");
+          meta.name = "viewport";
+          meta.content = "width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes";
+          document.head.appendChild(meta);
+          document.querySelector("#unity-container").className = "unity-mobile";
+          canvas.className = "unity-mobile";
+          // config.devicePixelRatio = 1; // 必要なら解放
+        } else {
+          canvas.style.width = "960px";
+          canvas.style.height = "600px";
         }
-        updateBannerVisibility();
+
+        document.querySelector("#unity-loading-bar").style.display = "block";
+
+        const script = document.createElement("script");
+        script.src = loaderUrl;
+        script.onload = () => {
+          createUnityInstance(canvas, config, (progress) => {
+            document.querySelector("#unity-progress-bar-full").style.width = 100 * progress + "%";
+          })
+            .then((unityInstance) => {
+              document.querySelector("#unity-loading-bar").style.display = "none";
+              document.querySelector("#unity-fullscreen-button").onclick = () => {
+                unityInstance.SetFullscreen(1);
+              };
+            })
+            .catch((message) => {
+              alert(message);
+            });
+        };
+        document.body.appendChild(script);
       }
 
-      var buildUrl = "Build";
-      var loaderUrl = buildUrl + "/WebMetavers.loader.js";
-      var config = {
-        arguments: [],
-        dataUrl: buildUrl + "/WebMetavers.data",
-        frameworkUrl: buildUrl + "/WebMetavers.framework.js",
-        codeUrl: buildUrl + "/WebMetavers.wasm",
-        streamingAssetsUrl: "StreamingAssets",
-        companyName: "DefaultCompany",
-        productName: "PhotonwebMetavers",
-        productVersion: "0.1.0",
-        showBanner: unityShowBanner,
-      };
-
-      // By default, Unity keeps WebGL canvas render target size matched with
-      // the DOM size of the canvas element (scaled by window.devicePixelRatio)
-      // Set this to false if you want to decouple this synchronization from
-      // happening inside the engine, and you would instead like to size up
-      // the canvas DOM size and WebGL render target sizes yourself.
-      // config.matchWebGLToCanvasSize = false;
-
-      // If you would like all file writes inside Unity Application.persistentDataPath
-      // directory to automatically persist so that the contents are remembered when
-      // the user revisits the site the next time, uncomment the following line:
-      // config.autoSyncPersistentDataPath = true;
-      // This autosyncing is currently not the default behavior to avoid regressing
-      // existing user projects that might rely on the earlier manual
-      // JS_FileSystem_Sync() behavior, but in future Unity version, this will be
-      // expected to change.
-
-      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-        // Mobile device style: fill the whole browser client area with the game canvas:
-
-        var meta = document.createElement('meta');
-        meta.name = 'viewport';
-        meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
-        document.getElementsByTagName('head')[0].appendChild(meta);
-        document.querySelector("#unity-container").className = "unity-mobile";
-        canvas.className = "unity-mobile";
-
-        // To lower canvas resolution on mobile devices to gain some
-        // performance, uncomment the following line:
-        // config.devicePixelRatio = 1;
-
-
-      } else {
-        // Desktop style: Render the game canvas in a window that can be maximized to fullscreen:
-        canvas.style.width = "960px";
-        canvas.style.height = "600px";
+      // ---------------- パスワードチェック処理 ----------------
+      function checkPassword() {
+        const input = document.getElementById("password-input").value;
+        const errorMsg = document.getElementById("password-error");
+        if (input === CORRECT_PASSWORD) {
+          // 正解: オーバーレイを非表示、Unity をロード
+          document.getElementById("password-overlay").style.display = "none";
+          document.getElementById("unity-container").classList.remove("hidden");
+          loadUnity();
+        } else {
+          // 不正解: エラーメッセージ表示＆再入力
+          errorMsg.style.display = "block";
+          document.getElementById("password-input").value = "";
+          document.getElementById("password-input").focus();
+        }
       }
 
-      document.querySelector("#unity-loading-bar").style.display = "block";
-
-      var script = document.createElement("script");
-      script.src = loaderUrl;
-      script.onload = () => {
-        createUnityInstance(canvas, config, (progress) => {
-          document.querySelector("#unity-progress-bar-full").style.width = 100 * progress + "%";
-              }).then((unityInstance) => {
-                document.querySelector("#unity-loading-bar").style.display = "none";
-                document.querySelector("#unity-fullscreen-button").onclick = () => {
-                  unityInstance.SetFullscreen(1);
-                };
-
-              }).catch((message) => {
-                alert(message);
-              });
-            };
-
-      document.body.appendChild(script);
-
+      // ボタン & Enter キーでチェック
+      document.getElementById("password-submit").addEventListener("click", checkPassword);
+      document.getElementById("password-input").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") checkPassword();
+      });
     </script>
   </body>
 </html>
